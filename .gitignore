@@ -1,3 +1,4 @@
 /.DS_Store
-/ref.csv
 /xmls
+*.csv
+*.xml
