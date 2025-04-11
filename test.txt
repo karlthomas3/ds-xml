@@ -1,0 +1,2 @@
+JobGet feed URL -https://clickcastfeeds.s3.amazonaws.com/5d128bf97bc8f088d367bad3494c47bf/feed.xml.gz
+JobG8 feed URL -https://www.jobg8.com/fileserver/jobs.aspx?username=80AA978A0A&password=2A88ED2DED&accountnumber=822415&filename=Jobs.xml

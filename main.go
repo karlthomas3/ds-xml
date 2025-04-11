@@ -7,6 +7,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -16,6 +17,7 @@ func main() {
 	// Command-line flags
 	parentNode := flag.String("node", "", "Parent node to search for")
 	refNode := flag.String("ref", "", "Reference node containing ID")
+	urlFlag := flag.String("url", "", "URL to download xml from")
 	flag.Parse()
 
 	if *parentNode == "" || *refNode == "" {
@@ -31,75 +33,98 @@ func main() {
 	}
 	dir := filepath.Dir(execPath)
 
-	requiredExtensions := []string{".xml", ".csv"}
-	var csvFilePath, xmlFilePath string
+	var xmlFilePath string
+
+	if *urlFlag != "" {
+		// Download xml from url
+		fmt.Println("Downloading xml from url:", *urlFlag)
+		tempDir := os.TempDir()
+		tempFilePath := filepath.Join(tempDir, "temp.xml")
+		err := downloadFile(*urlFlag, tempFilePath)
+		if err != nil {
+			fmt.Println("Error downloading xml file:", err)
+			return
+		}
+		defer os.Remove(tempFilePath)
+		xmlFilePath = tempFilePath
+		fmt.Println("xml file downloaded to:", xmlFilePath)
+
+		// log first bit of file for debugging
+		// content, err := os.ReadFile(xmlFilePath)
+		// if err != nil {
+		// 	fmt.Println("Error reading downloaded XML file:", err)
+		// 	return
+		// }
+		// fmt.Println("Downloaded XML content (first 500 characters):")
+		// fmt.Println(string(content[:500]))
+	} else {
+		// check for required xml in local dir
+		xmlFilePath, err = findFileByExtension(dir, ".xml")
+		if err != nil {
+			fmt.Println(err)
+			return
+		}
+	}
 
 	// Check for required files
-	for _, ext := range requiredExtensions {
-		found := false
-		err := filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
-			if err != nil {
-				return nil
-			}
-			if filepath.Ext(info.Name()) == ext {
-				if ext == ".csv" {
-					csvFilePath = path
-				} else if ext == ".xml" {
-					xmlFilePath = path
-				}
-				found = true
-				return filepath.SkipDir
-			}
-			return nil
-		})
-		if err != nil {
-			fmt.Println("Error walking the directory:", err)
-			return
-		}
-		if !found {
-			fmt.Printf("No %s file found.\n", ext)
-			return
-		}
+	csvFilePath, err := findFileByExtension(dir, ".csv")
+	if err != nil {
+		fmt.Println(err)
+		return
 	}
 
 	// Get IDs from CSV
-	var referenceIDs []string
-	if csvFilePath != "" {
-		fmt.Println("Reading IDs from CSV file:", csvFilePath)
-		referenceIDs, err = readCSV(csvFilePath)
-		if err != nil {
-			fmt.Println("Error reading CSV:", err)
-			return
-		}
+	fmt.Println("Reading IDs from CSV file:", csvFilePath)
+	referenceIDs, err := readCSV(csvFilePath)
+	if err != nil {
+		fmt.Println("Error reading CSV:", err)
+		return
 	}
 
-	if xmlFilePath != "" {
-		fmt.Println("Parsing XML file:", xmlFilePath)
-		matchingEntries, err := parseXML(xmlFilePath, referenceIDs, *parentNode, *refNode)
-		if err != nil {
-			fmt.Println("Error parsing XML:", err)
+	// Parse XML
+	fmt.Println("Parsing XML file:", xmlFilePath)
+	matchingEntries, err := parseXML(xmlFilePath, referenceIDs, *parentNode, *refNode)
+	if err != nil {
+		fmt.Println("Error parsing XML:", err)
+		return
+	}
+	if len(matchingEntries) == 0 {
+		fmt.Println("No matching entries found.")
+	} else {
+		// Ensure output folder exists
+		outputDir := "output"
+		if err := os.MkdirAll(outputDir, os.ModePerm); err != nil {
+			fmt.Println("Error creating output directory:", err)
 			return
 		}
-		if len(matchingEntries) == 0 {
-			fmt.Println("No matching entries found.")
+
+		// Write the output XML file
+		outputFilePath := filepath.Join(outputDir, "output.xml")
+		fmt.Println("Matching entries found. Writing to output.xml...")
+		if err := writeToXML(outputFilePath, matchingEntries); err != nil {
+			fmt.Println("Error writing to XML file:", err)
 		} else {
-			// ensure output folder exists
-			outputDir := "output"
-			if err := os.MkdirAll(outputDir, os.ModePerm); err != nil {
-				fmt.Println("Error creating output directory:", err)
-				return
-			}
-
-			// Write the output XML file
-			outputFilePath := filepath.Join(outputDir, "output.xml")
-			fmt.Println("Matching entries found. Writing to output.xml...")
-			if err := writeToXML(outputFilePath, matchingEntries); err != nil {
-				fmt.Println("Error writing to XML file:", err)
-			} else {
-				fmt.Printf("Captured nodes successfully written to %s\n", outputFilePath)
-			}
+			fmt.Printf("Captured nodes successfully written to %s\n", outputFilePath)
 		}
 	}
+}
+
+// Locate files in local dir by extension
+func findFileByExtension(dir string, extension string) (string, error) {
+	fmt.Println("Searching for files in dir:", dir)
+
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return "", fmt.Errorf("Error reading directory: %v", err)
+	}
+
+	for _, entry := range entries {
+		if !entry.IsDir() && filepath.Ext(entry.Name()) == extension {
+			return filepath.Join(dir, entry.Name()), nil
+		}
+	}
+
+	return "", fmt.Errorf("No %s file found in directory: %s", extension, dir)
 }
 
 // Reads CSV and returns slice of IDs
@@ -250,5 +275,31 @@ func writeToXML(filePath string, capturedNodes []string) error {
 	if err != nil {
 		return fmt.Errorf("Error writing closing root element: %v", err)
 	}
+	return nil
+}
+
+// Downloads a file from a URL and saves it to the specified path
+func downloadFile(url, filePath string) error {
+	resp, err := http.Get(url)
+	if err != nil {
+		return fmt.Errorf("failed to download file: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("failed to download file: HTTP %d", resp.StatusCode)
+	}
+
+	file, err := os.Create(filePath)
+	if err != nil {
+		return fmt.Errorf("failed to create file: %v", err)
+	}
+	defer file.Close()
+
+	_, err = io.Copy(file, resp.Body)
+	if err != nil {
+		return fmt.Errorf("failed to save file: %v", err)
+	}
+
 	return nil
 }
