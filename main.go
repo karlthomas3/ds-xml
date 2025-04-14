@@ -1,8 +1,11 @@
 package main
 
 import (
+	"archive/tar"
+	"archive/zip"
 	"bufio"
 	"bytes"
+	"compress/gzip"
 	"encoding/xml"
 	"flag"
 	"fmt"
@@ -36,18 +39,28 @@ func main() {
 	var xmlFilePath string
 
 	if *urlFlag != "" {
-		// Download xml from url
-		fmt.Println("Downloading xml from url:", *urlFlag)
+		// Download from url
+		fmt.Println("Downloading file from url:", *urlFlag)
 		tempDir := os.TempDir()
-		tempFilePath := filepath.Join(tempDir, "temp.xml")
-		err := downloadFile(*urlFlag, tempFilePath)
+
+		// extract filename from url
+		fileName := filepath.Base(*urlFlag)
+		tempFilePath := filepath.Join(tempDir, fileName)
+
+		// download and extract file
+		xmlFilePath, err = downloadFile(*urlFlag, tempFilePath)
 		if err != nil {
 			fmt.Println("Error downloading xml file:", err)
 			return
 		}
-		defer os.Remove(tempFilePath)
-		xmlFilePath = tempFilePath
+		defer os.Remove(xmlFilePath)
 		fmt.Println("xml file downloaded to:", xmlFilePath)
+
+		// check if file exists
+		if _, err := os.Stat(xmlFilePath); os.IsNotExist(err) {
+			fmt.Println("Error: Extracted XML file does not exist:", xmlFilePath)
+			return
+		}
 
 		// log first bit of file for debugging
 		// content, err := os.ReadFile(xmlFilePath)
@@ -65,8 +78,10 @@ func main() {
 			return
 		}
 	}
+	// debug
+	fmt.Println("debug xmlFilePath:", xmlFilePath)
 
-	// Check for required files
+	// Check for csv
 	csvFilePath, err := findFileByExtension(dir, ".csv")
 	if err != nil {
 		fmt.Println(err)
@@ -111,7 +126,7 @@ func main() {
 
 // Locate files in local dir by extension
 func findFileByExtension(dir string, extension string) (string, error) {
-	fmt.Println("Searching for files in dir:", dir)
+	fmt.Printf("Searching for %s in dir: %s\n", extension, dir)
 
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -279,27 +294,211 @@ func writeToXML(filePath string, capturedNodes []string) error {
 }
 
 // Downloads a file from a URL and saves it to the specified path
-func downloadFile(url, filePath string) error {
+// handles .zip, .gz, and .tar.gz.
+func downloadFile(url, filePath string) (string, error) {
 	resp, err := http.Get(url)
 	if err != nil {
-		return fmt.Errorf("failed to download file: %v", err)
+		return "", fmt.Errorf("failed to download file: %v", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("failed to download file: HTTP %d", resp.StatusCode)
+		return "", fmt.Errorf("failed to download file: HTTP %d", resp.StatusCode)
 	}
 
 	file, err := os.Create(filePath)
 	if err != nil {
-		return fmt.Errorf("failed to create file: %v", err)
+		return "", fmt.Errorf("failed to create file: %v", err)
 	}
 	defer file.Close()
 
 	_, err = io.Copy(file, resp.Body)
 	if err != nil {
-		return fmt.Errorf("failed to save file: %v", err)
+		return "", fmt.Errorf("failed to save file: %v", err)
 	}
 
-	return nil
+	// Handle compressed files based on their extensions
+	switch {
+	case strings.HasSuffix(filePath, ".zip"):
+		fmt.Println("File is a ZIP archive. Extracting...")
+		extractedFiles, err := unzip(filePath, filepath.Dir(filePath))
+		if err != nil {
+			return "", fmt.Errorf("failed to extract ZIP file: %v", err)
+		}
+		err = os.Remove(filePath) // Delete the ZIP file after extraction
+		if err != nil {
+			return "", fmt.Errorf("failed to delete ZIP file: %v", err)
+		}
+		// Return the first extracted file (assuming it's the XML file)
+		return extractedFiles[0], nil
+
+	case strings.HasSuffix(filePath, ".gz") && !strings.HasSuffix(filePath, ".tar.gz"):
+		fmt.Println("File is a GZIP archive. Extracting...")
+		extractedFilePath := strings.TrimSuffix(filePath, ".gz")
+		extractedFile, err := ungzip(filePath, extractedFilePath)
+		if err != nil {
+			return "", fmt.Errorf("failed to extract GZIP file: %v", err)
+		}
+		err = os.Remove(filePath) // Delete the GZIP file after extraction
+		if err != nil {
+			return "", fmt.Errorf("failed to delete GZIP file: %v", err)
+		}
+		return extractedFile, nil
+
+	case strings.HasSuffix(filePath, ".tar.gz") || strings.HasSuffix(filePath, ".tgz"):
+		fmt.Println("File is a TAR.GZ archive. Extracting...")
+		extractedFiles, err := untarGz(filePath, filepath.Dir(filePath))
+		if err != nil {
+			return "", fmt.Errorf("failed to extract TAR.GZ file: %v", err)
+		}
+		err = os.Remove(filePath) // Delete the TAR.GZ file after extraction
+		if err != nil {
+			return "", fmt.Errorf("failed to delete TAR.GZ file: %v", err)
+		}
+		// Return the first extracted file (assuming it's the XML file)
+		return extractedFiles[0], nil
+	}
+
+	// If the file is not compressed, return the original file path
+	return filePath, nil
+}
+
+// Unzips compressed files
+func unzip(src, dest string) ([]string, error) {
+	r, err := zip.OpenReader(src)
+	if err != nil {
+		return nil, err
+	}
+	defer r.Close()
+
+	var extractedFiles []string
+
+	for _, f := range r.File {
+		fPath := filepath.Join(dest, f.Name)
+		if !strings.HasPrefix(fPath, filepath.Clean(dest)+string(os.PathSeparator)) {
+			return nil, fmt.Errorf("illegal file path: %s", fPath)
+		}
+
+		if f.FileInfo().IsDir() {
+			// Create directories
+			if err := os.MkdirAll(fPath, os.ModePerm); err != nil {
+				return nil, err
+			}
+			continue
+		}
+
+		// Create files
+		if err := os.MkdirAll(filepath.Dir(fPath), os.ModePerm); err != nil {
+			return nil, err
+		}
+
+		outFile, err := os.OpenFile(fPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, f.Mode())
+		if err != nil {
+			return nil, err
+		}
+
+		rc, err := f.Open()
+		if err != nil {
+			outFile.Close()
+			return nil, err
+		}
+
+		_, err = io.Copy(outFile, rc)
+		outFile.Close()
+		rc.Close()
+		if err != nil {
+			return nil, err
+		}
+
+		extractedFiles = append(extractedFiles, fPath)
+	}
+
+	return extractedFiles, nil
+}
+
+func ungzip(src, dest string) (string, error) {
+	fmt.Printf("Extracting .gzip file: %s to %s\n", src, dest)
+
+	file, err := os.Open(src)
+	if err != nil {
+		return "", fmt.Errorf("failed to open .gzip file: %v", err)
+	}
+	defer file.Close()
+
+	gz, err := gzip.NewReader(file)
+	if err != nil {
+		return "", fmt.Errorf("failed to create gzip reader: %v", err)
+	}
+	defer gz.Close()
+
+	outFile, err := os.Create(dest)
+	if err != nil {
+		return "", fmt.Errorf("failed to create extracted file: %v", err)
+	}
+	defer outFile.Close()
+
+	_, err = io.Copy(outFile, gz)
+	if err != nil {
+		return "", fmt.Errorf("failed to extract .gzip file: %v", err)
+	}
+
+	fmt.Printf(".gzip file extracted to %s\n", dest)
+	return dest, nil
+}
+
+func untarGz(src, dest string) ([]string, error) {
+	file, err := os.Open(src)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+
+	gz, err := gzip.NewReader(file)
+	if err != nil {
+		return nil, err
+	}
+	defer gz.Close()
+
+	tarReader := tar.NewReader(gz)
+	var extractedFiles []string
+
+	for {
+		header, err := tarReader.Next()
+		if err == io.EOF {
+			break // End of archive
+		}
+		if err != nil {
+			return nil, err
+		}
+
+		fPath := filepath.Join(dest, header.Name)
+		if !strings.HasPrefix(fPath, filepath.Clean(dest)+string(os.PathSeparator)) {
+			return nil, fmt.Errorf("illegal file path: %s", fPath)
+		}
+
+		switch header.Typeflag {
+		case tar.TypeDir:
+			// Create directories
+			if err := os.MkdirAll(fPath, os.ModePerm); err != nil {
+				return nil, err
+			}
+		case tar.TypeReg:
+			// Create files
+			if err := os.MkdirAll(filepath.Dir(fPath), os.ModePerm); err != nil {
+				return nil, err
+			}
+			outFile, err := os.Create(fPath)
+			if err != nil {
+				return nil, err
+			}
+			_, err = io.Copy(outFile, tarReader)
+			outFile.Close()
+			if err != nil {
+				return nil, err
+			}
+			extractedFiles = append(extractedFiles, fPath)
+		}
+	}
+
+	return extractedFiles, nil
 }
