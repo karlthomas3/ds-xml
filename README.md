@@ -14,6 +14,9 @@ are written to a new XML file, wrapped in a root element, and saved in an
 - Extracts parent nodes (`-node`) containing child nodes (`-ref`) with matching
   values from a CSV file.
 - Outputs the extracted nodes as a well-formed XML file with a root element.
+- Use the (`-url`) flag to download (and if needed extract from .zip, .gz, or
+  .tar.gz) to a temp directory for parsing. (Downloaded files are automatically
+  cleaned after use)
 - Automatically creates an `output` directory to store the results.
 
 ---
@@ -44,7 +47,7 @@ In your terminal type:
 ### Warning
 
 - You must place the `.xml` you wish to parse in the same location as ds-xml and
-  ensure it's the only `.xml` in that location
+  ensure it's the only `.xml` in that location (if parsing local xml)
 - You must place a `csv` containing the IDs for the entries you wish to extract
   in the same location as ds-xml and ensure it't the only `.csv`
 
@@ -52,6 +55,9 @@ In your terminal type:
 
 - `-node`: The name of the parent node to search for in the XML file.
 - `-ref`: The name of the child node containing the reference ID.
+- `-head`: scans the first N characters and prints them to the console. Useful
+  for discovering unknown tag names for `-node` and `-ref`
+- `-url`: The url to download the xml from.
 
 ### Steps to Run
 
