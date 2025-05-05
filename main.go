@@ -63,14 +63,6 @@ func main() {
 			return
 		}
 
-		// log first bit of file for debugging
-		// content, err := os.ReadFile(xmlFilePath)
-		// if err != nil {
-		// 	fmt.Println("Error reading downloaded XML file:", err)
-		// 	return
-		// }
-		// fmt.Println("Downloaded XML content (first 500 characters):")
-		// fmt.Println(string(content[:500]))
 	} else {
 		// check for required xml in local dir
 		xmlFilePath, err = findFileByExtension(dir, ".xml")
@@ -123,8 +115,15 @@ func main() {
 			return
 		}
 
+		// generate output file name
+		refPart := *refNode
+		if refPart == "" {
+			refPart = "all"
+		}
+		outputFileName := fmt.Sprintf("%s_%s.xml", *parentNode, refPart)
+
 		// Write the output XML file
-		outputFilePath := filepath.Join(outputDir, "output.xml")
+		outputFilePath := filepath.Join(outputDir, outputFileName)
 		fmt.Println("Matching entries found. Writing to output.xml...")
 		if err := writeToXML(outputFilePath, matchingEntries); err != nil {
 			fmt.Println("Error writing to XML file:", err)
