@@ -24,7 +24,7 @@ func main() {
 	scanFlag := flag.Int("head", 0, "Scan and print the first N characters of the xml")
 	flag.Parse()
 
-	if *parentNode == "" || *refNode == "" {
+	if *parentNode == "" {
 		fmt.Println("Usage: ds-xml -node <parentNode> -ref <refNode>")
 		return
 	}
@@ -214,6 +214,10 @@ func parseXML(filePath string, referenceIDs []string, parentNode, refNode string
 				if err := encoder.EncodeToken(t); err != nil {
 					return nil, err
 				}
+				// if no refNode provided, consider all parent nodes a match
+				if refNode == "" {
+					matchFound = true
+				}
 			} else if insideParent {
 				// Capture child nodes of the parent
 				if err := encoder.EncodeToken(t); err != nil {
@@ -244,7 +248,7 @@ func parseXML(filePath string, referenceIDs []string, parentNode, refNode string
 		case xml.CharData:
 			if insideParent {
 				text := strings.TrimSpace(string(t))
-				if captureDepth != -1 && contains(referenceIDs, text) {
+				if refNode != "" && captureDepth != -1 && contains(referenceIDs, text) {
 					matchFound = true
 				}
 				if err := encoder.EncodeToken(t); err != nil {

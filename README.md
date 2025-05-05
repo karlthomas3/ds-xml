@@ -55,6 +55,7 @@ In your terminal type:
 
 - `-node`: The name of the parent node to search for in the XML file.
 - `-ref`: The name of the child node containing the reference ID.
+- (If no `-ref` is provided, then ALL nodes will match.)
 - `-head`: scans the first N characters and prints them to the console. Useful
   for discovering unknown tag names for `-node` and `-ref`
 - `-url`: The url to download the xml from.
