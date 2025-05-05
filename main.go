@@ -21,7 +21,7 @@ func main() {
 	parentNode := flag.String("node", "", "Parent node to search for")
 	refNode := flag.String("ref", "", "Reference node containing ID")
 	urlFlag := flag.String("url", "", "URL to download xml from")
-	scanFlag := flag.Int("head", 500, "Scan and print the first N characters of the xml")
+	scanFlag := flag.Int("head", 0, "Scan and print the first N characters of the xml")
 	flag.Parse()
 
 	if *parentNode == "" || *refNode == "" {
