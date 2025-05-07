@@ -59,6 +59,7 @@ In your terminal type:
 - `-head`: scans the first N characters and prints them to the console. Useful
   for discovering unknown tag names for `-node` and `-ref`
 - `-url`: The url to download the xml from.
+- `-chunk`: Break up the output xml into separate files with a max of N nodes
 
 ### Steps to Run
 

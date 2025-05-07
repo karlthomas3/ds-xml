@@ -22,6 +22,7 @@ func main() {
 	refNode := flag.String("ref", "", "Reference node containing ID")
 	urlFlag := flag.String("url", "", "URL to download xml from")
 	scanFlag := flag.Int("head", 0, "Scan and print the first N characters of the xml")
+	chunkSize := flag.Int("chunk", 0, "Number of entries per output xml file (default: all in one file)")
 	flag.Parse()
 
 	if *parentNode == "" {
@@ -105,6 +106,7 @@ func main() {
 		fmt.Println("Error parsing XML:", err)
 		return
 	}
+
 	if len(matchingEntries) == 0 {
 		fmt.Println("No matching entries found.")
 	} else {
@@ -115,20 +117,34 @@ func main() {
 			return
 		}
 
-		// generate output file name
-		refPart := *refNode
-		if refPart == "" {
-			refPart = "all"
+		// handle chunking
+		totalEntries := len(matchingEntries)
+		chunk := *chunkSize
+		if chunk <= 0 || chunk > totalEntries {
+			chunk = totalEntries
 		}
-		outputFileName := fmt.Sprintf("%s_%s.xml", *parentNode, refPart)
 
-		// Write the output XML file
-		outputFilePath := filepath.Join(outputDir, outputFileName)
-		fmt.Println("Matching entries found. Writing to output.xml...")
-		if err := writeToXML(outputFilePath, matchingEntries); err != nil {
-			fmt.Println("Error writing to XML file:", err)
-		} else {
-			fmt.Printf("Captured nodes successfully written to %s\n", outputFilePath)
+		for i := 0; i < totalEntries; i += chunk {
+			end := i + chunk
+			if end > totalEntries {
+				end = totalEntries
+			}
+
+			// generate output file name for chunk
+			refPart := *refNode
+			if refPart == "" {
+				refPart = "all"
+			}
+			outputFileName := fmt.Sprintf("%s_%s_part-%d.xml", *parentNode, refPart, i/chunk+1)
+
+			// Write the output XML file
+			outputFilePath := filepath.Join(outputDir, outputFileName)
+			fmt.Printf("Writing chunk %d to %s ... \n", i/chunk+1, outputFilePath)
+			if err := writeToXML(outputFilePath, matchingEntries[i:end]); err != nil {
+				fmt.Printf("Error writing chunk %d to XML file: %v\n", i/chunk+1, err)
+			} else {
+				fmt.Printf("Captured nodes successfully written to %s\n", outputFilePath)
+			}
 		}
 	}
 }
