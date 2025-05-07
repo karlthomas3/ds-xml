@@ -110,10 +110,10 @@ If you have:
   ```
   <?xml version="1.0" encoding="UTF-8"?>
   <root>
-  <job>
-    <location>Las Vegas, NV</location>
-    <job_reference>12345</job_reference>
-  </job>
+    <job>
+      <location>Las Vegas, NV</location>
+      <job_reference>12345</job_reference>
+    </job>
   </root>
   ```
 
