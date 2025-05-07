@@ -84,16 +84,22 @@ If you have:
 #### Output
 
 - The tool creates an output directory in the current working directory.
-- The extracted nodes are written to output/output.xml.
+- The extracted nodes are written to `output/<node>_<ref>.xml`
   ##### Example Output
   If the input XML contains:
   ```
-  <job>
-  <location>Las Vegas, NV</location> <job_reference>12345</job_reference>
-  </job>
-  <job>
-  <location>New York, NY</location> <job_reference>67890</job_reference>
-  </job>
+  <source>
+    <jobs>
+      <job>
+        <location>Las Vegas, NV</location>
+        <job_reference>12345</job_reference>
+      </job>
+      <job>
+        <location>New York, NY</location>
+        <job_reference>67890</job_reference>
+      </job>
+    </jobs>
+  </source>
   ```
   And the CSV contains:
   ```
