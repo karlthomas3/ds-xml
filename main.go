@@ -25,7 +25,7 @@ func main() {
 	chunkSize := flag.Int("chunk", 0, "Number of entries per output xml file (default: all in one file)")
 	flag.Parse()
 
-	if *parentNode == "" {
+	if *parentNode == "" && *scanFlag == 0 {
 		fmt.Println("Usage: ds-xml -node <parentNode> -ref <refNode>")
 		return
 	}
